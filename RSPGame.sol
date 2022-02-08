@@ -15,10 +15,10 @@ contract RPS {
    */
    
     enum Hand {
-        rock, paper, scissors
+        rock, scissors, paper
     }
     
-    enum PlayerStatus{
+    enum PlayerStatus {
         STATUS_WIN, STATUS_LOSE, STATUS_TIE, STATUS_PENDING
     }
     
@@ -28,7 +28,7 @@ contract RPS {
     
     // player structure
     struct Player {
-        Hand hand;
+        bytes32 hand;
         address payable addr;
         PlayerStatus playerStatus;
         uint256 playerBetAmount;
@@ -44,9 +44,13 @@ contract RPS {
     
     mapping(uint => Game) rooms;
     uint roomLen = 0;
+
+    function RSPHashing (Hand hand, uint roomNum) private returns (bytes32) {
+        return keccak256(abi.encodePacked(uint8(hand) + uint8(roomNum)));
+    }
     
-    modifier isValidHand (Hand _hand) {
-        require((_hand  == Hand.rock) || (_hand  == Hand.paper) || (_hand == Hand.scissors));
+    modifier isValidHand (bytes32 _hand, uint roomNum) {
+        require((_hand  == RSPHashing(Hand.rock, roomNum)) || (_hand  == RSPHashing(Hand.scissors, roomNum)) || (_hand == RSPHashing(Hand.paper, roomNum)));
         _;
     }
     
@@ -55,8 +59,7 @@ contract RPS {
         _;
     }
     
-    
-    function createRoom (Hand _hand) public payable isValidHand(_hand) returns (uint roomNum) {
+    function createRoom (bytes32 _hand) public payable isValidHand(_hand, roomLen) returns (uint roomNum) {
         rooms[roomLen] = Game({
             betAmount: msg.value,
             gameStatus: GameStatus.STATUS_NOT_STARTED,
@@ -67,7 +70,7 @@ contract RPS {
                 playerBetAmount: msg.value
             }),
             taker: Player({ // will change
-                hand: Hand.rock,
+                hand: RSPHashing(Hand.rock, roomLen),
                 addr: payable(msg.sender),  
                 playerStatus: PlayerStatus.STATUS_PENDING,
                 playerBetAmount: 0
@@ -80,11 +83,11 @@ contract RPS {
        // Emit gameCreated(msg.sender, msg.value);
     }
     
-    function joinRoom(uint roomNum, Hand _hand) public payable isValidHand( _hand) {
+    function joinRoom(uint roomNum, Hand _hand) public payable isValidHand(RSPHashing(_hand, roomNum), roomNum) {
        // Emit gameJoined(game.originator.addr, msg.sender, game.betAmount, msg.value);
         
         rooms[roomNum].taker = Player({
-            hand: _hand,
+            hand: RSPHashing(_hand, roomNum),
             addr: payable(msg.sender),
             playerStatus: PlayerStatus.STATUS_PENDING,
             playerBetAmount: msg.value
@@ -111,8 +114,23 @@ contract RPS {
     }
     
     function compareHands(uint roomNum) private{
-        uint8 originator = uint8(rooms[roomNum].originator.hand);
-        uint8 taker = uint8(rooms[roomNum].taker.hand);
+        uint8 originator;
+        uint8 taker;
+        if (RSPHashing(Hand.rock, roomNum) == rooms[roomNum].originator.hand) {
+            originator = 0;
+        } else if (RSPHashing(Hand.scissors, roomNum) == rooms[roomNum].originator.hand) {
+            originator = 1;
+        } else if (RSPHashing(Hand.paper, roomNum) == rooms[roomNum].originator.hand) {
+            originator = 2;
+        }
+
+        if (RSPHashing(Hand.rock, roomNum) == rooms[roomNum].taker.hand) {
+            taker = 0;
+        } else if (RSPHashing(Hand.scissors, roomNum) == rooms[roomNum].taker.hand) {
+            taker = 1;
+        } else if (RSPHashing(Hand.paper, roomNum) == rooms[roomNum].taker.hand) {
+            taker = 2;
+        }
         
         rooms[roomNum].gameStatus = GameStatus.STATUS_STARTED;
         
@@ -121,11 +139,11 @@ contract RPS {
             rooms[roomNum].taker.playerStatus = PlayerStatus.STATUS_TIE;
             
         }
-        else if ((taker +1) % 3 == originator) { // originator wins
+        else if ((originator + 1) % 3 == taker) { // originator wins
             rooms[roomNum].originator.playerStatus = PlayerStatus.STATUS_WIN;
             rooms[roomNum].taker.playerStatus = PlayerStatus.STATUS_LOSE;
         }
-        else if ((originator + 1)%3 == taker){
+        else if ((taker + 1) % 3 == originator){
             rooms[roomNum].originator.playerStatus = PlayerStatus.STATUS_LOSE;
             rooms[roomNum].taker.playerStatus = PlayerStatus.STATUS_WIN;
         } else {
